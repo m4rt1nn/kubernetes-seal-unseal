@@ -1,7 +1,7 @@
-# Kubeseal extension for VS Code
+# Kubernetes seal and unseal extension for VS Code
 
 This extension provides functionality for sealed kubernets secrets.
-It wraps the command line utility `kubeseal` which is a part of the 
+It wraps the command line utility `kubeseal` which is a part of the
 https://github.com/bitnami-labs/sealed-secrets.
 
 ## Features
@@ -47,9 +47,8 @@ status: {}
 
 The corresponding command line would look something like
 
-
 ```bash
-kubeseal <mysecret.yml --scope cluster-wide --cert mycert.pem --format yaml >mysealedsecret.yml
+kubeseal < mysecret.yml --scope cluster-wide --cert mycert.pem --format yaml --controller-namespace sealed-secret > mysealedsecret.yml
 ```
 
 ![Seal a secret file](./media/sealFile.gif)
@@ -68,44 +67,16 @@ The plugin ships with a prebuilt version of kubeseal for windows. On other platf
 
 ## Extension Settings
 
-* `kubeseal.executablePath`: path to kubeseal executable
-* `kubeseal.useLocalCertificate`: Use local certificate file to seal secrets. Set to false if certificate is on your cluster.
+- `kubernetes-seal-unseal.executablePath`: path to kubeseal executable
+- `kubernetes-seal-unseal.useLocalCertificate`: Use local certificate file to seal secrets. Set to false if certificate is on your cluster.
+- `kubernetes-seal-unseal.controllerNamespace`: Namespace of sealed-secrets controller.
 
 ## Known Issues
 
-This extension is very much work in progress. 
+This extension is very much work in progress.
 
 ## Release Notes
 
 ### 0.0.1
 
 Initial release
-
-### 0.0.2
-
-Added tests. Improved default parameters. Miscellaneous fixes.
-
-### 0.0.3
-
-Improved select certificate dialog
-
-### 0.0.4
-
-Improved error handling and error messages when underlying command execution fails
-
-### 0.0.5
-
-Security patches (updated npm dependencies)
-
-### 0.0.6
-
-Making certificatePath optional to allow use of cluster-side certificates
-
-### 0.0.7
-
-Security patches, updated mocha test framework, typescript version and the plugin framework
-
-### 0.0.8
-
-Support for multi-cursor selection
-
