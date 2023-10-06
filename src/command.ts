@@ -1,7 +1,7 @@
 import { Scope, SealSecretParameters } from "./types";
-import * as tmp from "tmp";
-import * as fs from "fs";
-import * as cp from "child_process";
+import { fileSync } from "tmp";
+import { writeFileSync, readFileSync } from "fs";
+import { exec, spawnSync } from "child_process";
 
 export async function sealSecretRaw(
   kubesealPath: string,
@@ -11,8 +11,8 @@ export async function sealSecretRaw(
   controllerNamespace: string | undefined
 ): Promise<string> {
   // Write secret to a temporary file to since --from-file=stdin does not work on windows. This is a known problem at the time of writing.
-  const temporaryFile = tmp.fileSync();
-  fs.writeFileSync(temporaryFile.name, plainTextSecret);
+  const temporaryFile = fileSync();
+  writeFileSync(temporaryFile.name, plainTextSecret);
 
   const ctrlNS = controllerNamespace || "kube-system";
 
@@ -22,15 +22,13 @@ export async function sealSecretRaw(
   let command = "";
   switch (sealSecretParams.scope) {
     case Scope.strict:
-      command = `${kubesealPath} --raw --from-file="${normalizedTemporaryFilename}" --namespace "${sealSecretParams.namespace}" --name "${sealSecretParams.name}"`;
+      command = `${kubesealPath} --raw --from-file="${normalizedTemporaryFilename}" --namespace "${sealSecretParams.namespace}" --name "${sealSecretParams.name}" --controller-namespace "${ctrlNS}"`;
       break;
     case Scope.namespaceWide:
       command = `${kubesealPath} --raw --from-file="${normalizedTemporaryFilename}" --namespace "${sealSecretParams.namespace}" --scope namespace-wide --controller-namespace "${ctrlNS}"`;
       break;
     case Scope.clusterWide:
-      // even though documentation states that namespace is not required (which makes sense) it does not work without it when scope cluser-wide is used
-      // this is a confirmed bug; https://github.com/bitnami-labs/sealed-secrets/issues/393
-      command = `${kubesealPath} --raw --from-file="${normalizedTemporaryFilename}" --namespace dummyNamespace --scope cluster-wide`;
+      command = `${kubesealPath} --raw --from-file="${normalizedTemporaryFilename}" --scope cluster-wide --controller-namespace "${ctrlNS}"`;
       break;
     default:
       throw new Error(`Internal error. Unknown scope ${sealSecretParams.scope}`);
@@ -41,7 +39,7 @@ export async function sealSecretRaw(
 
   // Execute command line
   return new Promise<string>((resolve, reject) => {
-    cp.exec(command, {}, (error, stdout) => {
+    exec(command, {}, (error, stdout) => {
       if (error) {
         reject(error.message);
       } else {
@@ -59,7 +57,7 @@ export async function sealSecretFile(
   controllerNamespace: string | undefined
 ): Promise<string> {
   // Get file data
-  const secretFileData = fs.readFileSync(secretFilePath);
+  const secretFileData = readFileSync(secretFilePath);
 
   const ctrlNS = controllerNamespace || "kube-system";
 
@@ -68,13 +66,13 @@ export async function sealSecretFile(
   let command = "";
   switch (sealSecretParams.scope) {
     case Scope.strict:
-      command = `${kubesealPath} --namespace "${sealSecretParams.namespace}" --name "${sealSecretParams.name}" --format yaml`;
+      command = `${kubesealPath} --namespace "${sealSecretParams.namespace}" --name "${sealSecretParams.name}" --format yaml --controller-namespace "${ctrlNS}"`;
       break;
     case Scope.namespaceWide:
       command = `${kubesealPath} --namespace "${sealSecretParams.namespace}" --scope namespace-wide --format yaml --controller-namespace "${ctrlNS}"`;
       break;
     case Scope.clusterWide:
-      command = `${kubesealPath} --scope cluster-wide --format yaml`;
+      command = `${kubesealPath} --scope cluster-wide --format yaml --controller-namespace "${ctrlNS}"`;
       break;
     default:
       throw new Error(`Internal error. Unknown scope ${sealSecretParams.scope}`);
@@ -85,7 +83,7 @@ export async function sealSecretFile(
 
   // Execute command line
   return new Promise<string>((resolve, reject) => {
-    const cmdProcess = cp.exec(command, {}, (error, stdout) => {
+    const cmdProcess = exec(command, {}, (error, stdout) => {
       if (error) {
         reject(error.message);
       } else {
@@ -97,13 +95,18 @@ export async function sealSecretFile(
   });
 }
 
-export async function unsealSecretFile(secretName: string, nameSpace: string, secretFilePath: string): Promise<string> {
-  const secretFileData = fs.readFileSync(secretFilePath);
+export async function unsealSecretFile(
+  ocPath: string,
+  secretName: string,
+  nameSpace: string,
+  secretFilePath: string
+): Promise<string> {
+  const secretFileData = readFileSync(secretFilePath);
 
-  const command = `oc get secret ${secretName} -n ${nameSpace} -o yaml`;
+  const command = `${ocPath} get secret ${secretName} -n ${nameSpace} -o yaml`;
   // Execute command line
   return new Promise<string>((resolve, reject) => {
-    const cmdProcess = cp.exec(command, {}, (error, stdout) => {
+    const cmdProcess = exec(command, {}, (error, stdout) => {
       if (error) {
         reject(error.message);
       } else {
@@ -113,4 +116,13 @@ export async function unsealSecretFile(secretName: string, nameSpace: string, se
 
     cmdProcess.stdin?.end(secretFileData);
   });
+}
+
+export function isLoggedOut(ocPath: string | undefined) {
+  const cmdProcess = spawnSync(`${ocPath}`, ["whoami"]);
+  if (cmdProcess.error) {
+    return true;
+  } else {
+    return false;
+  }
 }

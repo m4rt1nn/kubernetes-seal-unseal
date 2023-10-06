@@ -8,6 +8,8 @@ https://github.com/bitnami-labs/sealed-secrets.
 
 You can use this extension to create a new sealed secrets file from an existing secret file.
 
+![Seal file](./example/seal-file.png)
+
 A secret file may look like
 
 ```yaml
@@ -51,23 +53,28 @@ The corresponding command line would look something like
 kubeseal < mysecret.yml --scope cluster-wide --cert mycert.pem --format yaml --controller-namespace sealed-secret > mysealedsecret.yml
 ```
 
-![Seal a secret file](./media/sealFile.gif)
+You can also encrypt the currently selected text
 
-You can also encrypt the currently selected text, corresponding to a a command line such as
+![Seal selected text](./example/seal-selection.png)
+
+corresponding to a a command line such as
 
 ```bash
 echo -n selectedSecretText | kubeseal --raw --from-file=/dev/stdin --scope cluster-wide --cert mycert.pem
 ```
 
-![Seal selected text](./media/sealSelectedText.gif)
+It is also possible to unseal a sealed secret file
+
+![Unseal a secret file](./example/unseal-file.png)
 
 ## Requirements
 
-The plugin ships with a prebuilt version of kubeseal for windows. On other platforms, kubeseal must be installed as a prerequisite. Installation instructions can be found [here](https://github.com/bitnami-labs/sealed-secrets#installation).
+kubeseal and oc must be installed as a prerequisite.
 
 ## Extension Settings
 
-- `kubernetes-seal-unseal.executablePath`: path to kubeseal executable
+- `kubernetes-seal-unseal.executablePathKubeseal`: path to kubeseal executable
+- `kubernetes-seal-unseal.executablePathOc`: path to oc executable
 - `kubernetes-seal-unseal.useLocalCertificate`: Use local certificate file to seal secrets. Set to false if certificate is on your cluster.
 - `kubernetes-seal-unseal.controllerNamespace`: Namespace of sealed-secrets controller.
 

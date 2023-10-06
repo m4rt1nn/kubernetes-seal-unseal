@@ -1,6 +1,6 @@
-import * as assert from "assert";
-import sinon, { stubInterface } from "ts-sinon";
-import { collectSealSecretDefaults } from "../../defaults";
+import { equal } from "assert";
+import { stubInterface } from "ts-sinon";
+import { collectDefaults } from "../../defaults";
 import { ExtensionContext, TextDocument } from "vscode";
 import { SealSecretParameters, Scope } from "../../types";
 
@@ -17,12 +17,12 @@ suite("Defaults", () => {
     };
 
     // Act
-    const result = collectSealSecretDefaults(document, lastUsed);
+    const result = collectDefaults(document, lastUsed);
 
     // Assert
-    assert.equal(result.name, lastUsed.name);
-    assert.equal(result.namespace, lastUsed.namespace);
-    assert.equal(result.scope, lastUsed.scope);
+    equal(result.name, lastUsed.name);
+    equal(result.namespace, lastUsed.namespace);
+    equal(result.scope, lastUsed.scope);
   });
 
   test("Should extract name and namespace from secret yaml if available", () => {
@@ -44,11 +44,11 @@ data:
     );
 
     // Act
-    const result = collectSealSecretDefaults(document);
+    const result = collectDefaults(document);
 
     // Assert
-    assert.equal(result.name, "secretName");
-    assert.equal(result.namespace, "secretNamespace");
+    equal(result.name, "secretName");
+    equal(result.namespace, "secretNamespace");
   });
 
   [
@@ -87,31 +87,14 @@ status: {}
       );
 
       // Act
-      const result = collectSealSecretDefaults(document);
+      const result = collectDefaults(document);
 
       // Assert
-      assert.equal(result.name, "secretName");
-      assert.equal(result.namespace, "secretNamespace");
-      assert.equal(result.scope, expectedScope);
+      equal(result.name, "secretName");
+      equal(result.namespace, "secretNamespace");
+      equal(result.scope, expectedScope);
     })
   );
-
-  test("Should extract defaults from path for params.libsonnet documents", () => {
-    // Arrange
-    const context = stubInterface<ExtensionContext>();
-    const document = <TextDocument>{
-      fileName: "X:\\Develop\\kube-applications-state\\apps\\solutions\\reportgenerator\\uat\\params.libsonnet",
-      isUntitled: false,
-    };
-
-    // Act
-    const result = collectSealSecretDefaults(document);
-
-    // Assert
-    assert.equal(result.name, "reportgenerator");
-    assert.equal(result.namespace, "solutions-reportgenerator");
-    assert.equal(result.scope, Scope.strict);
-  });
 
   test("Should fail gracefully for invalid yaml", () => {
     // Arrange
@@ -132,27 +115,10 @@ data:
     );
 
     // Act
-    const result = collectSealSecretDefaults(document);
+    const result = collectDefaults(document);
 
     // Assert
-    assert.equal(result.name, undefined);
-    assert.equal(result.namespace, undefined);
-  });
-
-  test("Should fail gracefully for params.libsonnet documents with non standard path", () => {
-    // Arrange
-    const context = stubInterface<ExtensionContext>();
-    const document = <TextDocument>{
-      fileName: "X:\\Source\\params.libsonnet",
-      isUntitled: false,
-    };
-
-    // Act
-    const result = collectSealSecretDefaults(document);
-
-    // Assert
-    assert.equal(result.name, undefined);
-    assert.equal(result.namespace, undefined);
-    assert.equal(result.scope, Scope.strict);
+    equal(result.name, undefined);
+    equal(result.namespace, undefined);
   });
 });

@@ -1,7 +1,7 @@
 export enum Scope {
-  strict = 1,
-  namespaceWide = 2,
-  clusterWide = 3,
+  strict = 0,
+  namespaceWide = 1,
+  clusterWide = 2,
 }
 
 export interface SealSecretParameters {
@@ -13,6 +13,7 @@ export interface SealSecretParameters {
 
 export interface ExtensionState {
   kubeSealPath: string | undefined;
+  ocPath: string | undefined;
   sealSecretParams: SealSecretParameters | undefined;
   localCert: boolean | true;
   controllerNamespace: string | undefined;

@@ -34,23 +34,29 @@
     ],
     "configuration": {
       "type": "object",
-      "title": "Seal Kubernetes Secret Configuration",
+      "title": "Kubernetes seal and unseal secret configuration",
       "properties": {
-        "kubernetes-seal-unseal.executablePath": {
+        "kubernetes-seal-unseal.executablePathKubeseal": {
           "type": "string",
-          "default": null,
+          "default": "kubeseal",
           "description": "Where to find kubeseal executable",
+          "scope": "resource"
+        },
+        "kubernetes-seal-unseal.executablePathOc": {
+          "type": "string",
+          "default": "oc",
+          "description": "Where to find oc executable",
           "scope": "resource"
         },
         "kubernetes-seal-unseal.useLocalCertificate": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "Use local certificate file to seal secrets. Set to false if certificate is on your remote cluster.",
           "scope": "resource"
         },
         "kubernetes-seal-unseal.controllerNamespace": {
           "type": "string",
-          "default": "kube-system",
+          "default": "sealed-secrets",
           "description": "Namespace of sealed-secrets controller.",
           "scope": "resource"
         }

@@ -1,38 +1,48 @@
-import * as vscode from "vscode";
-import * as path from "path";
+import { ExtensionContext, workspace, window, commands, ViewColumn } from "vscode";
 import { collectSealSecretUserInput } from "./userInput";
-import { sealSecretRaw, sealSecretFile, unsealSecretFile } from "./seal";
-import { collectSealSecretDefaults } from "./defaults";
-import * as os from "os";
-import * as fs from "fs";
+import { sealSecretRaw, sealSecretFile, unsealSecretFile, isLoggedOut } from "./command";
+import { collectDefaults } from "./defaults";
+import { existsSync } from "fs";
 import { ExtensionState } from "./types";
-import * as yaml from "js-yaml";
+import { safeLoad } from "js-yaml";
 
 let extensionState: ExtensionState = {
   kubeSealPath: undefined,
+  ocPath: undefined,
   sealSecretParams: undefined,
   localCert: true,
   controllerNamespace: undefined,
 };
 
-export function activate(context: vscode.ExtensionContext) {
+export function activate(context: ExtensionContext) {
   function initializeConfiguration() {
-    const kubesealConfiguration = vscode.workspace.getConfiguration("kubernetes-seal-unseal");
-    const configuredKubeSealPath = kubesealConfiguration.get<string>("executablePath");
+    const kubesealConfiguration = workspace.getConfiguration("kubernetes-seal-unseal");
+    const configuredKubeSealPath = kubesealConfiguration.get<string>("executablePathKubeseal");
+    const configuredOcPath = kubesealConfiguration.get<string>("executablePathOc");
     const configuredLocalCert = kubesealConfiguration.get<boolean>("useLocalCertificate");
     const configuredControllerNamespace = kubesealConfiguration.get<string>("controllerNamespace");
+
     extensionState.localCert = configuredLocalCert!;
-    if (os.platform() === "win32") {
-      extensionState.kubeSealPath = configuredKubeSealPath || path.join(context.extensionPath, "bin", "kubeseal.exe");
-    } else if (configuredKubeSealPath) {
+
+    if (configuredKubeSealPath) {
       extensionState.kubeSealPath = configuredKubeSealPath;
     } else {
-      vscode.window.showErrorMessage("kubernetes-seal-unseal.executablePath not set");
+      window.showErrorMessage("kubernetes-seal-unseal.executableKubesealPath not set");
+    }
+    if (configuredOcPath) {
+      extensionState.ocPath = configuredOcPath;
+    } else {
+      window.showErrorMessage("kubernetes-seal-unseal.executableOcPath not set");
     }
 
-    if (!extensionState.kubeSealPath || !fs.existsSync(extensionState.kubeSealPath)) {
-      vscode.window.showErrorMessage(
-        `kubernetes-seal-unseal.executablePath is set to ${extensionState.kubeSealPath} which does not exist`
+    if (!extensionState.kubeSealPath || !existsSync(extensionState.kubeSealPath)) {
+      window.showErrorMessage(
+        `kubernetes-seal-unseal.executableKubesealPath is set to ${extensionState.kubeSealPath} which does not exist`
+      );
+    }
+    if (!extensionState.ocPath || !existsSync(extensionState.ocPath)) {
+      window.showErrorMessage(
+        `kubernetes-seal-unseal.executableOcPath is set to ${extensionState.ocPath} which does not exist`
       );
     }
     extensionState.controllerNamespace = configuredControllerNamespace || "sealed-secret";
@@ -40,7 +50,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   initializeConfiguration();
 
-  const configSubscription = vscode.workspace.onDidChangeConfiguration((e) => {
+  const configSubscription = workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration("kubeseal")) {
       initializeConfiguration();
     }
@@ -52,37 +62,33 @@ export function activate(context: vscode.ExtensionContext) {
   // seal secret file
   //
 
-  let sealKubeSecretFileCommand = vscode.commands.registerCommand("extension.sealKubernetesSecretFile", async () => {
-    let editor = vscode.window.activeTextEditor;
+  let sealKubeSecretFileCommand = commands.registerCommand("extension.sealKubernetesSecretFile", async () => {
+    if (isLoggedOut(extensionState.ocPath)) {
+      window.showErrorMessage(`You need to be logged in to a cluster to run this command`);
+      return;
+    }
+
+    let editor = window.activeTextEditor;
 
     if (editor) {
-      if (editor.document.isDirty || editor.document.isUntitled) {
-        await vscode.commands.executeCommand("workbench.action.files.saveAs");
-      }
-
-      if (editor.document.isDirty || editor.document.isUntitled) {
-        return; // user aborted save
-      }
-
-      if (!extensionState.kubeSealPath) {
-        vscode.window.showErrorMessage(`kubeseal.executablePath is not set`);
-        return;
-      }
-
-      const document = editor.document;
-      extensionState.sealSecretParams = collectSealSecretDefaults(document, extensionState.sealSecretParams);
-      extensionState.sealSecretParams = await collectSealSecretUserInput(
-        context,
-        extensionState.sealSecretParams,
-        extensionState.localCert
-      );
-
-      if (!extensionState.kubeSealPath) {
-        vscode.window.showErrorMessage(`kubernetes-seal-unseal.executablePath is not set`);
-        return;
-      }
-
       try {
+        if (editor.document.isDirty || editor.document.isUntitled) {
+          await commands.executeCommand("workbench.action.files.saveAs");
+        }
+
+        if (editor.document.isDirty || editor.document.isUntitled) {
+          return; // user aborted save
+        }
+
+        const document = editor.document;
+        extensionState.sealSecretParams = collectDefaults(document, extensionState.sealSecretParams);
+        extensionState.sealSecretParams = await collectSealSecretUserInput(document, extensionState);
+
+        if (!extensionState.kubeSealPath) {
+          window.showErrorMessage(`kubernetes-seal-unseal.executablePathKubeseal is not set`);
+          return;
+        }
+
         const sealedSecret = await sealSecretFile(
           extensionState.kubeSealPath,
           document.fileName,
@@ -90,100 +96,113 @@ export function activate(context: vscode.ExtensionContext) {
           extensionState.localCert,
           extensionState.controllerNamespace
         );
-        const textDocument = await vscode.workspace.openTextDocument({ content: sealedSecret });
+        const textDocument = await workspace.openTextDocument({
+          content: sealedSecret.replace(/\n---.*/gm, ""),
+        });
         if (textDocument) {
-          await vscode.window.showTextDocument(textDocument, { viewColumn: vscode.ViewColumn.Beside });
+          await window.showTextDocument(textDocument, { viewColumn: ViewColumn.Beside });
         }
       } catch (error) {
-        vscode.window.showErrorMessage(String(error) || "An unknown error occurred");
+        window.showErrorMessage(String(error) || "An unknown error occurred");
       }
     }
   });
   context.subscriptions.push(sealKubeSecretFileCommand);
 
-  let unsealKubeSecretFileCommand = vscode.commands.registerCommand(
-    "extension.unsealKubernetesSecretFile",
-    async () => {
-      let editor = vscode.window.activeTextEditor;
+  //
+  // unseal secret file
+  //
 
-      if (editor) {
+  let unsealKubeSecretFileCommand = commands.registerCommand("extension.unsealKubernetesSecretFile", async () => {
+    if (isLoggedOut(extensionState.ocPath)) {
+      window.showErrorMessage(`You need to be logged in to a cluster to run this command`);
+      return;
+    }
+
+    let editor = window.activeTextEditor;
+
+    if (editor) {
+      try {
         if (editor.document.isDirty || editor.document.isUntitled) {
-          await vscode.commands.executeCommand("workbench.action.files.saveAs");
+          await commands.executeCommand("workbench.action.files.saveAs");
         }
 
         if (editor.document.isDirty || editor.document.isUntitled) {
           return; // user aborted save
         }
         const document = editor.document;
-        try {
-          const documentText = document?.getText();
-          const documentDom: any = yaml.safeLoad(documentText);
-          const name = documentDom?.metadata?.name;
-          if (!name) {
-            vscode.window.showErrorMessage("The document doesn't contain the field 'metadata.name'");
-            return;
-          }
-          const namespace = documentDom?.metadata?.namespace;
-          if (!namespace) {
-            vscode.window.showErrorMessage("The document doesn't contain the field 'metadata.namespace'");
-            return;
-          }
-          const sealedSecret = await unsealSecretFile(name, namespace, document.fileName);
-          const textDocument = await vscode.workspace.openTextDocument({ content: sealedSecret });
-          if (textDocument) {
-            await vscode.window.showTextDocument(textDocument, { viewColumn: vscode.ViewColumn.Beside });
-          }
-        } catch (error) {
-          vscode.window.showErrorMessage(String(error) || "An unknown error occurred");
+        const documentText = document?.getText();
+        const documentDom: any = safeLoad(documentText);
+        const name = documentDom?.metadata?.name;
+        if (!name) {
+          window.showErrorMessage("The document doesn't contain the field 'metadata.name'");
+          return;
         }
+        const namespace = documentDom?.metadata?.namespace;
+        if (!namespace) {
+          window.showErrorMessage("The document doesn't contain the field 'metadata.namespace'");
+          return;
+        }
+
+        const sealedSecret = await unsealSecretFile(`${extensionState.ocPath}`, name, namespace, document.fileName);
+
+        const textDocument = await workspace.openTextDocument({ content: sealedSecret });
+        if (textDocument) {
+          await window.showTextDocument(textDocument, { viewColumn: ViewColumn.Beside });
+        }
+      } catch (error) {
+        window.showErrorMessage(String(error) || "An unknown error occurred");
       }
     }
-  );
+  });
   context.subscriptions.push(unsealKubeSecretFileCommand);
 
   //
   // seal secret selection
   //
 
-  let sealKubeSecretSelectedTextCommand = vscode.commands.registerCommand(
+  let sealKubeSecretSelectedTextCommand = commands.registerCommand(
     "extension.sealKubernetesSecretSelectedText",
     async () => {
-      const editor = vscode.window.activeTextEditor;
+      if (isLoggedOut(extensionState.ocPath)) {
+        window.showErrorMessage(`You need to be logged in to a cluster to run this command`);
+        return;
+      }
+
+      const editor = window.activeTextEditor;
 
       if (editor) {
-        if (!extensionState.kubeSealPath) {
-          vscode.window.showErrorMessage(`kubeseal.executablePath is not set`);
-          return;
-        }
+        try {
+          if (!extensionState.kubeSealPath) {
+            window.showErrorMessage(`kubeseal.executablePath is not set`);
+            return;
+          }
 
-        const document = editor.document;
-        const selections = editor.selections;
+          const document = editor.document;
+          const selection = editor.selections[0];
+          if (selection.isEmpty) {
+            window.showErrorMessage(`You can't seal an empty selection`);
+            return;
+          }
 
-        extensionState.sealSecretParams = collectSealSecretDefaults(document, extensionState.sealSecretParams, false);
-        extensionState.sealSecretParams = await collectSealSecretUserInput(
-          context,
-          extensionState.sealSecretParams,
-          extensionState.localCert
-        );
+          extensionState.sealSecretParams = collectDefaults(document, extensionState.sealSecretParams);
+          extensionState.sealSecretParams = await collectSealSecretUserInput(document, extensionState);
 
-        for (const selection of selections) {
           const plainTextSecret = document.getText(selection);
 
-          try {
-            const sealedSecret = await sealSecretRaw(
-              extensionState.kubeSealPath,
-              plainTextSecret,
-              extensionState.sealSecretParams,
-              extensionState.localCert,
-              extensionState.controllerNamespace
-            );
+          const sealedSecret = await sealSecretRaw(
+            extensionState.kubeSealPath,
+            plainTextSecret,
+            extensionState.sealSecretParams,
+            extensionState.localCert,
+            extensionState.controllerNamespace
+          );
 
-            editor.edit((editBuilder) => {
-              editBuilder.replace(selection, sealedSecret);
-            });
-          } catch (error) {
-            vscode.window.showErrorMessage(String(error) || "An unknown error occurred");
-          }
+          editor.edit((editBuilder) => {
+            editBuilder.replace(selection, sealedSecret);
+          });
+        } catch (error) {
+          window.showErrorMessage(String(error) || "An unknown error occurred");
         }
       }
     }
