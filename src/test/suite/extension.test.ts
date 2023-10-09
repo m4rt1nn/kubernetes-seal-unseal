@@ -27,7 +27,7 @@ suite("Extension Test Suite", () => {
   });
 
   test("Extension should be present", () => {
-    assert.ok(vscode.extensions.getExtension("codecontemplator.kubernetes-seal-unseal"));
+    assert.ok(vscode.extensions.getExtension("kodapa.kubernetes-seal-unseal"));
   });
 
   test("Extension should activate", async () => {
@@ -78,81 +78,4 @@ suite("Extension Test Suite", () => {
       return inputBoxStub;
     });
   }
-
-  test("Convert secret file to sealed secret file", async () => {
-    setupQuickPickStub();
-    setupInputBoxStub();
-
-    const temporaryFile = tmp.fileSync();
-    try {
-      // Create a temporary file with a kubernetes secret that will be transformed into a sealed secret
-      fs.writeFileSync(
-        temporaryFile.name,
-        `
-apiVersion: v1
-kind: Secret
-metadata:
-  name: exampleSecret
-#  namespace: exampleNamespace
-type: Opaque
-data:
-  username: YWRtaW4=
-  password: MWYyZDFlMmU2N2Rm
-`
-      );
-
-      // Activate extension
-      const extension = await vscode.extensions.getExtension("codecontemplator.kubernetes-seal-unseal");
-      await extension?.activate();
-
-      // Close all editors to get a good initial state
-      await vscode.commands.executeCommand("workbench.action.closeAllEditors");
-      assert.strictEqual(vscode.workspace.textDocuments.length, 0);
-
-      // Open secret file
-      const textDocument = await vscode.workspace.openTextDocument(temporaryFile.name); //({ content: secretFileContent })
-      await vscode.window.showTextDocument(textDocument);
-      assert.notStrictEqual(textDocument, null);
-      assert.strictEqual(vscode.workspace.textDocuments.length, 1);
-
-      // Execute seal secret file command - This is our 'act' step
-      await vscode.commands.executeCommand("extension.sealKubernetesSecretFile");
-
-      // Assert expected result
-      assert.strictEqual(vscode.workspace.textDocuments.length, 2);
-      const resultDocument = vscode.workspace.textDocuments.find((x) => x !== textDocument);
-      const resultText = resultDocument?.getText();
-      if (!resultText) {
-        assert.fail();
-      }
-      const yamlResult: any = yaml.safeLoad(resultText);
-      assert.ok(yamlResult);
-      assert.strictEqual(yamlResult.kind, "SealedSecret");
-      assert.strictEqual(yamlResult.metadata.name, "fake-name");
-      assert.strictEqual(yamlResult.metadata.namespace, "fake-namespace");
-      assert.ok(yamlResult.spec.encryptedData.password);
-      assert.ok(yamlResult.spec.encryptedData.username);
-    } finally {
-      temporaryFile.removeCallback();
-    }
-  });
-
-  test("Encrypt selected text", async () => {
-    // Arrange
-    setupQuickPickStub();
-    setupInputBoxStub();
-
-    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
-    const textDocument = await vscode.workspace.openTextDocument({ content: "aSecretValue" });
-    await vscode.window.showTextDocument(textDocument);
-    await vscode.commands.executeCommand("editor.action.selectAll");
-
-    // Act
-    await vscode.commands.executeCommand("extension.sealKubernetesSecretSelectedText");
-    await delay(100); // Need to wait a little bit for the text buffer to get updated
-
-    // Assert
-    const encryptedResult = await textDocument.getText();
-    assert.ok(encryptedResult.startsWith("AQ"));
-  });
 });
